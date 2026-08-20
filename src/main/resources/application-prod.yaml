@@ -1,0 +1,59 @@
+server:
+  port: "${SERVER_PORT:8080}"
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db,redis,rabbit
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+  datasource:
+    url: "${SPRING_DATASOURCE_URL}"
+    username: "${SPRING_DATASOURCE_USERNAME}"
+    password: "${SPRING_DATASOURCE_PASSWORD}"
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  data:
+    redis:
+      host: "${SPRING_DATA_REDIS_HOST}"
+      port: "${SPRING_DATA_REDIS_PORT:6379}"
+      password: "${SPRING_DATA_REDIS_PASSWORD}"
+
+  rabbitmq:
+    host: "${SPRING_RABBITMQ_HOST}"
+    port: "${SPRING_RABBITMQ_PORT:5672}"
+    username: "${SPRING_RABBITMQ_USERNAME}"
+    password: "${SPRING_RABBITMQ_PASSWORD}"
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+stock:
+  strategy: "${STOCK_STRATEGY:redis}"
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
