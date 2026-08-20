@@ -1,0 +1,69 @@
+# src/main/resources/application.yml
+server:
+  port: 8080
+#logging:
+  #level:
+    # 关掉某个包的 info
+    #com.example.myapp.controller: WARN
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: order-platform
+
+spring:
+  application:
+    name: order-platform
+  datasource:
+    url: jdbc:mysql://localhost:3306/order_platform?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Tokyo
+    username: root
+    password: root123
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 5000
+        default-requeue-rejected: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+mybatis-plus:
+  mapper-locations: classpath:mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+stock:
+  strategy: redis    # db = optimistic lock only, redis = Redis pre-deduct + DB
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html

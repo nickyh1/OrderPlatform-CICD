@@ -1,0 +1,55 @@
+-- V1__init_tables.sql
+
+CREATE TABLE product (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100) NOT NULL COMMENT '商品名称',
+    price DECIMAL(10,2) NOT NULL COMMENT '商品价格',
+    description VARCHAR(500) COMMENT '商品描述',
+    status TINYINT DEFAULT 1 COMMENT '1-上架 0-下架',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品表';
+
+CREATE TABLE inventory (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    product_id BIGINT NOT NULL UNIQUE COMMENT '商品ID',
+    total_stock INT NOT NULL COMMENT '总库存',
+    available_stock INT NOT NULL COMMENT '可用库存',
+    locked_stock INT NOT NULL DEFAULT 0 COMMENT '锁定库存（已下单未支付）',
+    version INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='库存表';
+
+CREATE TABLE orders (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    order_no VARCHAR(64) NOT NULL UNIQUE COMMENT '订单编号',
+    user_id BIGINT NOT NULL COMMENT '用户ID',
+    product_id BIGINT NOT NULL COMMENT '商品ID',
+    quantity INT NOT NULL COMMENT '购买数量',
+    total_amount DECIMAL(10,2) NOT NULL COMMENT '订单总金额',
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/PAID/CANCELLED/TIMEOUT',
+    idempotent_key VARCHAR(64) UNIQUE COMMENT '幂等键',
+    payment_time DATETIME COMMENT '支付时间',
+    expire_time DATETIME COMMENT '订单过期时间',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_user_status (user_id, status),
+    INDEX idx_order_no (order_no),
+    INDEX idx_expire_time (expire_time, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='订单表';
+
+CREATE TABLE order_message_log (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    message_id VARCHAR(64) NOT NULL UNIQUE COMMENT '消息唯一ID',
+    order_id BIGINT NOT NULL COMMENT '订单ID',
+    message_type VARCHAR(32) NOT NULL COMMENT 'ORDER_CREATED/PAYMENT_CALLBACK/ORDER_TIMEOUT',
+    payload TEXT NOT NULL COMMENT '消息内容JSON',
+    status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/SENT/CONSUMED/FAILED',
+    retry_count INT DEFAULT 0 COMMENT '重试次数',
+    max_retry INT DEFAULT 3 COMMENT '最大重试次数',
+    next_retry_time DATETIME COMMENT '下次重试时间',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_status_retry (status, next_retry_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='本地消息表';
