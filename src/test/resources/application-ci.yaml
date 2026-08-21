@@ -18,12 +18,9 @@ spring:
 
   flyway:
     enabled: true
-    flyway:
-      enabled: true
-      locations:
-        - classpath:db/migration
-        - classpath:db/devdata
-      baseline-on-migrate: false
+    locations:
+      - classpath:db/migration
+      - classpath:db/devdata
     baseline-on-migrate: false
 
 mybatis-plus:
