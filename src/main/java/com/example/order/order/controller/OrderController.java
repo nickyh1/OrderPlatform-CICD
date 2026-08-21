@@ -22,26 +22,6 @@ public class OrderController {
     private final RateLimitService rateLimitService;
 
     /**
-     * Stress test endpoint: auto-generate token and create order.
-     * DO NOT use in production.
-     */
-    @PostMapping("/stress-test")
-    public Result<OrderInfo> stressTestOrder(@Valid @RequestBody CreateOrderRequest request) {
-        // Rate limit check
-        String rateLimitKey = "rate_limit:order:" + request.getUserId();
-        if (!rateLimitService.isAllowed(rateLimitKey, 100, 1)) {
-            throw new BusinessException(ResultCode.RATE_LIMITED);
-        }
-
-        // Auto-generate token
-        String token = idempotentService.generateToken();
-        request.setIdempotentToken(token);
-        return Result.success(orderService.createOrder(request));
-    }
-
-
-
-    /**
      * Get idempotent token before placing order
      */
     @GetMapping("/token")
