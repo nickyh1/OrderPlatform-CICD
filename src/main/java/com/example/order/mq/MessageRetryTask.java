@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
 @Component
@@ -24,6 +25,7 @@ public class MessageRetryTask {
     private final OrderMessageLogMapper messageLogMapper;
     private final RabbitTemplate rabbitTemplate;
     private final OrderMetrics orderMetrics;
+    private final ObjectMapper objectMapper;
 
     /**
      * Every 30 seconds, scan PENDING messages and retry sending.
@@ -50,7 +52,7 @@ public class MessageRetryTask {
 
                 // Send with CorrelationData so MqConfirmCallback can update status to SENT on broker ack
                 CorrelationData correlationData = new CorrelationData(msg.getMessageId());
-                rabbitTemplate.convertAndSend(RabbitMQConfig.ORDER_EXCHANGE, routingKey, msg.getPayload(),
+                rabbitTemplate.convertAndSend(RabbitMQConfig.ORDER_EXCHANGE, routingKey, objectMapper.readTree(msg.getPayload()),
                         message -> {
                             message.getMessageProperties().setHeader("messageId", msg.getMessageId());
                             return message;

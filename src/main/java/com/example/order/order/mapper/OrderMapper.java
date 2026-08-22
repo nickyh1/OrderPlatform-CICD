@@ -18,9 +18,21 @@ public interface OrderMapper extends BaseMapper<OrderInfo> {
 
     /**
      * Atomically mark order as PAID from PENDING, recording payment timestamp.
-     * Returns 1 if updated, 0 if already processed.
+     * Returns 1 only when the order is still pending and has not expired.
      */
     @Update("UPDATE orders SET status = 'PAID', payment_time = NOW(), update_time = NOW() " +
-            "WHERE order_no = #{orderNo} AND status = 'PENDING'")
+            "WHERE order_no = #{orderNo} " +
+            "AND status = 'PENDING' " +
+            "AND expire_time > NOW()")
     int markPaidIfPending(@Param("orderNo") String orderNo);
+
+    /**
+     * Atomically mark an expired PENDING order as TIMEOUT.
+     * Returns 1 only when the order is still pending and has expired.
+     */
+    @Update("UPDATE orders SET status = 'TIMEOUT', update_time = NOW() " +
+            "WHERE order_no = #{orderNo} " +
+            "AND status = 'PENDING' " +
+            "AND expire_time <= NOW()")
+    int markTimeoutIfExpired(@Param("orderNo") String orderNo);
 }

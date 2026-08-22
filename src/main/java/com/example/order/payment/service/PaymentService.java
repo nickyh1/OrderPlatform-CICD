@@ -1,5 +1,7 @@
 package com.example.order.payment.service;
 
+import com.example.order.common.BusinessException;
+import com.example.order.common.ResultCode;
 import com.example.order.inventory.service.InventoryService;
 import com.example.order.order.entity.OrderInfo;
 import com.example.order.order.entity.OrderStatus;
@@ -29,25 +31,80 @@ public class PaymentService {
         OrderInfo order = orderService.getByOrderNo(orderNo);
 
         if (success) {
-            // Conditional update: atomically mark PAID, prevents race with timeout/cancel
+            // Only a non-expired PENDING order can become PAID.
             int rows = orderMapper.markPaidIfPending(orderNo);
+
             if (rows == 0) {
-                log.info("Order already processed, skip payment success callback: orderNo={}", orderNo);
-                return orderService.getByOrderNo(orderNo);
+                OrderInfo currentOrder =
+                        orderService.getByOrderNo(orderNo);
+
+                // Still PENDING means expire_time <= NOW(), but timeout
+                // processing has not completed yet.
+                if (OrderStatus.PENDING.getValue()
+                        .equals(currentOrder.getStatus())) {
+
+                    log.warn(
+                            "Payment rejected because order has expired: " +
+                                    "orderNo={}, expireTime={}",
+                            orderNo,
+                            currentOrder.getExpireTime()
+                    );
+
+                    throw new BusinessException(
+                            ResultCode.ORDER_STATUS_INVALID
+                    );
+                }
+
+                // Repeated callbacks for terminal orders are idempotent.
+                log.info(
+                        "Order already processed, skip payment success callback: " +
+                                "orderNo={}, status={}",
+                        orderNo,
+                        currentOrder.getStatus()
+                );
+
+                return currentOrder;
             }
-            inventoryService.confirmStock(order.getProductId(), order.getQuantity());
+
+            inventoryService.confirmStock(
+                    order.getProductId(),
+                    order.getQuantity()
+            );
+
             log.info("Payment success: orderNo={}", orderNo);
             order.setStatus(OrderStatus.PAID.getValue());
 
         } else {
-            // Conditional update: atomically mark CANCELLED
-            int rows = orderMapper.updateStatusFromPending(orderNo, OrderStatus.CANCELLED.getValue());
+            // Payment failure can only cancel a PENDING order.
+            int rows = orderMapper.updateStatusFromPending(
+                    orderNo,
+                    OrderStatus.CANCELLED.getValue()
+            );
+
             if (rows == 0) {
-                log.info("Order already processed, skip payment failure callback: orderNo={}", orderNo);
-                return orderService.getByOrderNo(orderNo);
+                OrderInfo currentOrder =
+                        orderService.getByOrderNo(orderNo);
+
+                log.info(
+                        "Order already processed, skip payment failure callback: " +
+                                "orderNo={}, status={}",
+                        orderNo,
+                        currentOrder.getStatus()
+                );
+
+                return currentOrder;
             }
-            inventoryService.rollbackStock(order.getProductId(), order.getQuantity());
-            log.info("Payment failed, order cancelled: orderNo={}", orderNo);
+
+            inventoryService.rollbackStock(
+                    order.getProductId(),
+                    order.getQuantity()
+            );
+
+            log.info(
+                    "Payment failed, order cancelled: orderNo={}",
+                    orderNo
+            );
+
             order.setStatus(OrderStatus.CANCELLED.getValue());
         }
 

@@ -55,11 +55,17 @@ public class OrderMessageProducer {
     public void sendMessage(OrderMessageLog msgLog, String routingKey) {
         try {
             CorrelationData correlationData = new CorrelationData(msgLog.getMessageId());
-            rabbitTemplate.convertAndSend(RabbitMQConfig.ORDER_EXCHANGE, routingKey, msgLog.getPayload(),
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.ORDER_EXCHANGE,
+                    routingKey,
+                    objectMapper.readTree(msgLog.getPayload()),
                     message -> {
-                        message.getMessageProperties().setHeader("messageId", msgLog.getMessageId());
+                        message.getMessageProperties()
+                                .setHeader("messageId", msgLog.getMessageId());
                         return message;
-                    }, correlationData);
+                    },
+                    correlationData
+            );
             log.info("Message sent, awaiting broker confirm: messageId={}, routingKey={}", msgLog.getMessageId(), routingKey);
         } catch (Exception e) {
             log.error("Failed to send message: messageId={}, will be retried", msgLog.getMessageId(), e);
@@ -73,7 +79,7 @@ public class OrderMessageProducer {
     public void sendDelayMessage(OrderMessageLog msgLog) {
         try {
             CorrelationData correlationData = new CorrelationData(msgLog.getMessageId());
-            rabbitTemplate.convertAndSend(RabbitMQConfig.ORDER_EXCHANGE, "order.delay", msgLog.getPayload(),
+            rabbitTemplate.convertAndSend(RabbitMQConfig.ORDER_EXCHANGE, "order.delay", objectMapper.readTree(msgLog.getPayload()),
                     message -> {
                         message.getMessageProperties().setHeader("messageId", msgLog.getMessageId());
                         return message;

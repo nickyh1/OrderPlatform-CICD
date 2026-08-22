@@ -21,8 +21,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import io.micrometer.core.instrument.Timer;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -84,7 +82,11 @@ public class OrderService {
             order.setTotalAmount(product.getPrice().multiply(BigDecimal.valueOf(request.getQuantity())));
             order.setStatus(OrderStatus.PENDING.getValue());
             order.setIdempotentKey(request.getIdempotentToken());
-            order.setExpireTime(LocalDateTime.now().plusMinutes(15));
+            order.setExpireTime(
+                    LocalDateTime.now()
+                            .plusMinutes(15)
+                            .withNano(0)
+            );
             orderMapper.insert(order);
 
             // 4. Save message logs (inside transaction)
