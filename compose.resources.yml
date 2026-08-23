@@ -1,0 +1,24 @@
+services:
+  mysql:
+    mem_limit: 384m
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=67108864
+      - --performance-schema=OFF
+      - --max-connections=30
+      - --table-open-cache=400
+      - --table-definition-cache=400
+      - --table-open-cache-instances=1
+      - --temptable-max-ram=16777216
+      - --temptable-max-mmap=0
+      - --skip-mysqlx
+
+  redis:
+    mem_limit: 96m
+
+  rabbitmq:
+    mem_limit: 256m
+
+  app:
+    mem_limit: 640m
