@@ -1,0 +1,188 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "GHCR image tag, for example sha-<40-character-git-sha>"
+        required: true
+        type: string
+      image_digest:
+        description: "GHCR image digest, for example sha256:<64-character-digest>"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: order-platform-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/master'
+    name: Deploy to production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    environment:
+      name: production
+      url: https://order-api.qnnm-js.site/health
+
+    env:
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+
+      IMAGE_TAG: ${{ inputs.image_tag }}
+      IMAGE_DIGEST: ${{ inputs.image_digest }}
+
+      PUBLIC_HEALTH_URL: https://order-api.qnnm-js.site/health
+
+    steps:
+      - name: Validate deployment inputs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          if [[ ! "$IMAGE_TAG" =~ ^sha-[0-9a-f]{40}$ ]]; then
+            echo "::error::image_tag must be sha- followed by a 40-character lowercase Git SHA"
+            exit 1
+          fi
+
+          if [[ ! "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::image_digest must be a valid sha256 digest"
+            exit 1
+          fi
+
+          if [[ ! "$DEPLOY_HOST" =~ ^[A-Za-z0-9.-]+$ ]]; then
+            echo "::error::DEPLOY_HOST is invalid"
+            exit 1
+          fi
+
+          if [[ ! "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]] ||
+             (( DEPLOY_PORT < 1 || DEPLOY_PORT > 65535 )); then
+            echo "::error::DEPLOY_PORT is invalid"
+            exit 1
+          fi
+
+          if [[ ! "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+            echo "::error::DEPLOY_USER is invalid"
+            exit 1
+          fi
+
+      - name: Prepare SSH
+        shell: bash
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+
+          if [[ -z "$DEPLOY_SSH_KEY" ]]; then
+            echo "::error::DEPLOY_SSH_KEY is missing"
+            exit 1
+          fi
+
+          if [[ -z "$DEPLOY_KNOWN_HOSTS" ]]; then
+            echo "::error::DEPLOY_KNOWN_HOSTS is missing"
+            exit 1
+          fi
+
+          install -d -m 700 "$HOME/.ssh"
+
+          printf '%s\n' "$DEPLOY_SSH_KEY" |
+            tr -d '\r' > "$HOME/.ssh/order-platform-deploy"
+
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" |
+            tr -d '\r' > "$HOME/.ssh/known_hosts"
+
+          chmod 600 \
+            "$HOME/.ssh/order-platform-deploy" \
+            "$HOME/.ssh/known_hosts"
+
+          ssh-keygen -y \
+            -f "$HOME/.ssh/order-platform-deploy" \
+            > /dev/null
+
+      - name: Check candidate release
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          ssh \
+            -i "$HOME/.ssh/order-platform-deploy" \
+            -p "$DEPLOY_PORT" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=15 \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            sudo -n /opt/order-platform/deploy/deploy.sh \
+              check "$IMAGE_TAG" "$IMAGE_DIGEST"
+
+      - name: Deploy candidate release
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          ssh \
+            -i "$HOME/.ssh/order-platform-deploy" \
+            -p "$DEPLOY_PORT" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=15 \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            sudo -n /opt/order-platform/deploy/deploy.sh \
+              deploy "$IMAGE_TAG" "$IMAGE_DIGEST"
+
+      - name: Verify public health
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          HEALTH_RESPONSE="$(
+            curl \
+              --fail \
+              --silent \
+              --show-error \
+              --retry 10 \
+              --retry-all-errors \
+              --retry-delay 3 \
+              --connect-timeout 10 \
+              --max-time 30 \
+              "$PUBLIC_HEALTH_URL"
+          )"
+
+          printf '%s\n' "$HEALTH_RESPONSE"
+
+          if ! grep -Eq \
+            '"status"[[:space:]]*:[[:space:]]*"UP"' \
+            <<< "$HEALTH_RESPONSE"; then
+            echo "::error::Public health response is not UP"
+            exit 1
+          fi
+
+      - name: Write deployment summary
+        shell: bash
+        run: |
+          {
+            echo "### OrderPlatform production deployment"
+            echo
+            echo "- Image tag: \`${IMAGE_TAG}\`"
+            echo "- Image digest: \`${IMAGE_DIGEST}\`"
+            echo "- Environment: \`production\`"
+            echo "- Health: [${PUBLIC_HEALTH_URL}](${PUBLIC_HEALTH_URL})"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove temporary SSH files
+        if: always()
+        shell: bash
+        run: |
+          rm -f \
+            "$HOME/.ssh/order-platform-deploy" \
+            "$HOME/.ssh/known_hosts"
